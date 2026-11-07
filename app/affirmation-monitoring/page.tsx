@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -6,6 +7,7 @@ import { api } from "../../lib/api";
 type AffirmationEvent = {
   id: string;
   uid?: string | null;
+  email?: string | null;
   event?: string | null;
   date?: string | null;
   createdAt?: string | null;
@@ -15,16 +17,29 @@ type AffirmationEvent = {
   errorCode?: string | null;
 };
 
-function formatDate(value?: string | null) {
+const PAGE_SIZE = 20;
+
+function getLocalDateString() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function formatRecordedTime(value?: string | null) {
   if (!value) return "—";
 
   const date = new Date(value);
 
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
+  if (Number.isNaN(date.getTime())) return "—";
 
-  return date.toLocaleString();
+  return date.toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+  });
 }
 
 function isFailure(item: AffirmationEvent) {
@@ -32,18 +47,23 @@ function isFailure(item: AffirmationEvent) {
 
   return Boolean(
     item.errorCode ||
-    event.includes("error") ||
-    event.includes("fail")
+      event.includes("error") ||
+      event.includes("fail")
   );
 }
 
 function EventBadge({ event }: { event?: string | null }) {
   const value = String(event || "unknown");
-  const failed = value.toLowerCase().includes("error") ||
+  const failed =
+    value.toLowerCase().includes("error") ||
     value.toLowerCase().includes("fail");
 
   return (
-    <span className={`affirmation-event-badge ${failed ? "failed" : "normal"}`}>
+    <span
+      className={`affirmation-event-badge ${
+        failed ? "failed" : "normal"
+      }`}
+    >
       {value.replace(/[_-]+/g, " ")}
     </span>
   );
@@ -53,10 +73,15 @@ export default function AffirmationMonitoringPage() {
   const [events, setEvents] = useState<AffirmationEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
   const [search, setSearch] = useState("");
   const [eventFilter, setEventFilter] = useState("all");
   const [platformFilter, setPlatformFilter] = useState("all");
-  const [dateFilter, setDateFilter] = useState("");
+
+  // Default to today's affirmation events.
+  const [dateFilter, setDateFilter] = useState(getLocalDateString);
+
+  const [currentPage, setCurrentPage] = useState(1);
 
   const loadEvents = useCallback(async () => {
     setLoading(true);
@@ -68,9 +93,7 @@ export default function AffirmationMonitoringPage() {
       );
 
       setEvents(
-        Array.isArray(response.data)
-          ? response.data
-          : []
+        Array.isArray(response.data) ? response.data : []
       );
     } catch (err: any) {
       console.error(
@@ -110,6 +133,7 @@ export default function AffirmationMonitoringPage() {
       const matchesSearch =
         !query ||
         [
+          item.email,
           item.uid,
           item.event,
           item.notificationId,
@@ -130,10 +154,9 @@ export default function AffirmationMonitoringPage() {
         String(item.platform || "").toLowerCase() ===
           platformFilter;
 
+      // Filter using affirmation date, not recorded-at date.
       const matchesDate =
-        !dateFilter ||
-        item.date === dateFilter ||
-        (item.createdAt || "").startsWith(dateFilter);
+        !dateFilter || item.date === dateFilter;
 
       return (
         matchesSearch &&
@@ -150,10 +173,43 @@ export default function AffirmationMonitoringPage() {
     dateFilter,
   ]);
 
+  const totalPages = Math.max(
+    1,
+    Math.ceil(filteredEvents.length / PAGE_SIZE)
+  );
+
+  // Keep the current page within the available page range.
+  const safeCurrentPage = Math.min(
+    currentPage,
+    totalPages
+  );
+
+  const paginatedEvents = useMemo(() => {
+    const startIndex =
+      (safeCurrentPage - 1) * PAGE_SIZE;
+
+    return filteredEvents.slice(
+      startIndex,
+      startIndex + PAGE_SIZE
+    );
+  }, [filteredEvents, safeCurrentPage]);
+
+  const firstItem =
+    filteredEvents.length === 0
+      ? 0
+      : (safeCurrentPage - 1) * PAGE_SIZE + 1;
+
+  const lastItem = Math.min(
+    safeCurrentPage * PAGE_SIZE,
+    filteredEvents.length
+  );
+
   const successfulEvents = events.filter(
     (item) =>
       !isFailure(item) &&
-      String(item.event || "").toLowerCase().includes("success")
+      String(item.event || "")
+        .toLowerCase()
+        .includes("success")
   ).length;
 
   const failedEvents = events.filter(isFailure).length;
@@ -163,6 +219,14 @@ export default function AffirmationMonitoringPage() {
       .map((item) => item.uid)
       .filter(Boolean)
   ).size;
+
+  function clearFilters() {
+    setSearch("");
+    setEventFilter("all");
+    setPlatformFilter("all");
+    setDateFilter(getLocalDateString());
+    setCurrentPage(1);
+  }
 
   return (
     <div>
@@ -187,25 +251,35 @@ export default function AffirmationMonitoringPage() {
         <div className="card">
           <div className="muted">Events loaded</div>
           <div className="metric">{events.length}</div>
-          <small className="muted">Latest 200 maximum</small>
+          <small className="muted">
+            Latest 200 maximum
+          </small>
         </div>
 
         <div className="card">
           <div className="muted">Successful events</div>
-          <div className="metric">{successfulEvents}</div>
-          <small className="muted">Events marked as success</small>
+          <div className="metric">
+            {successfulEvents}
+          </div>
+          <small className="muted">
+            Events marked as success
+          </small>
         </div>
 
         <div className="card">
           <div className="muted">Failed events</div>
           <div className="metric">{failedEvents}</div>
-          <small className="muted">Errors and failures recorded</small>
+          <small className="muted">
+            Errors and failures recorded
+          </small>
         </div>
 
         <div className="card">
           <div className="muted">Users represented</div>
           <div className="metric">{uniqueUsers}</div>
-          <small className="muted">Unique user IDs in loaded events</small>
+          <small className="muted">
+            Unique user IDs in loaded events
+          </small>
         </div>
       </div>
 
@@ -213,20 +287,23 @@ export default function AffirmationMonitoringPage() {
         <div className="affirmation-filters">
           <input
             type="search"
-            placeholder="Search UID, notification ID, timezone..."
+            placeholder="Search email, notification ID, timezone..."
             value={search}
-            onChange={(event) =>
-              setSearch(event.target.value)
-            }
+            onChange={(event) => {
+              setSearch(event.target.value);
+              setCurrentPage(1);
+            }}
           />
 
           <select
             value={eventFilter}
-            onChange={(event) =>
-              setEventFilter(event.target.value)
-            }
+            onChange={(event) => {
+              setEventFilter(event.target.value);
+              setCurrentPage(1);
+            }}
           >
             <option value="all">All event types</option>
+
             {eventTypes.map((event) => (
               <option key={event} value={event}>
                 {event.replace(/[_-]+/g, " ")}
@@ -236,9 +313,10 @@ export default function AffirmationMonitoringPage() {
 
           <select
             value={platformFilter}
-            onChange={(event) =>
-              setPlatformFilter(event.target.value)
-            }
+            onChange={(event) => {
+              setPlatformFilter(event.target.value);
+              setCurrentPage(1);
+            }}
           >
             <option value="all">All platforms</option>
             <option value="ios">iOS</option>
@@ -248,20 +326,16 @@ export default function AffirmationMonitoringPage() {
           <input
             type="date"
             value={dateFilter}
-            onChange={(event) =>
-              setDateFilter(event.target.value)
-            }
+            onChange={(event) => {
+              setDateFilter(event.target.value);
+              setCurrentPage(1);
+            }}
           />
 
           <button
             type="button"
             className="secondary"
-            onClick={() => {
-              setSearch("");
-              setEventFilter("all");
-              setPlatformFilter("all");
-              setDateFilter("");
-            }}
+            onClick={clearFilters}
           >
             Clear filters
           </button>
@@ -271,17 +345,24 @@ export default function AffirmationMonitoringPage() {
           <div>
             <h2>Monitoring Events</h2>
             <p className="muted">
-              Showing {filteredEvents.length} of {events.length} loaded events.
+              Showing {firstItem}–{lastItem} of{" "}
+              {filteredEvents.length} matching events.
             </p>
           </div>
         </div>
 
         {loading ? (
-          <p className="muted">Loading affirmation events...</p>
+          <p className="muted">
+            Loading affirmation events...
+          </p>
         ) : error ? (
           <div className="affirmation-error">
             {error}
-            <button type="button" onClick={loadEvents}>
+
+            <button
+              type="button"
+              onClick={loadEvents}
+            >
               Try again
             </button>
           </div>
@@ -290,68 +371,109 @@ export default function AffirmationMonitoringPage() {
             No affirmation monitoring events match these filters.
           </div>
         ) : (
-          <div className="affirmation-table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Event</th>
-                  <th>User ID</th>
-                  <th>Affirmation date</th>
-                  <th>Platform</th>
-                  <th>Timezone</th>
-                  <th>Notification ID</th>
-                  <th>Error code</th>
-                  <th>Recorded at</th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {filteredEvents.map((item) => (
-                  <tr key={item.id}>
-                    <td>
-                      <EventBadge event={item.event} />
-                    </td>
-
-                    <td className="affirmation-uid">
-                      {item.uid || "—"}
-                    </td>
-
-                    <td>{item.date || "—"}</td>
-
-                    <td>
-                      {item.platform
-                        ? item.platform.toUpperCase()
-                        : "—"}
-                    </td>
-
-                    <td>{item.timezone || "—"}</td>
-
-                    <td className="affirmation-notification-id">
-                      {item.notificationId || "—"}
-                    </td>
-
-                    <td>
-                      {item.errorCode ? (
-                        <span className="affirmation-error-code">
-                          {item.errorCode}
-                        </span>
-                      ) : (
-                        "—"
-                      )}
-                    </td>
-
-                    <td>{formatDate(item.createdAt)}</td>
+          <>
+            <div className="affirmation-table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Event</th>
+                    <th>Email</th>
+                    <th>Affirmation date</th>
+                    <th>Platform</th>
+                    <th>Timezone</th>
+                    <th>Notification ID</th>
+                    <th>Error code</th>
+                    <th>Recorded at</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+
+                <tbody>
+                  {paginatedEvents.map((item) => (
+                    <tr key={item.id}>
+                      <td>
+                        <EventBadge event={item.event} />
+                      </td>
+
+                      <td className="affirmation-uid">
+                        {item.email || "Email unavailable"}
+                      </td>
+
+                      <td>{item.date || "—"}</td>
+
+                      <td>
+                        {item.platform
+                          ? item.platform.toUpperCase()
+                          : "—"}
+                      </td>
+
+                      <td>{item.timezone || "—"}</td>
+
+                      <td className="affirmation-notification-id">
+                        {item.notificationId || "—"}
+                      </td>
+
+                      <td>
+                        {item.errorCode ? (
+                          <span className="affirmation-error-code">
+                            {item.errorCode}
+                          </span>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+
+                      <td>
+                        {formatRecordedTime(item.createdAt)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="affirmation-pagination">
+              <span>
+                Showing {firstItem}–{lastItem} of{" "}
+                {filteredEvents.length} events
+              </span>
+
+              <div className="affirmation-pagination-controls">
+                <button
+                  type="button"
+                  disabled={safeCurrentPage === 1}
+                  onClick={() =>
+                    setCurrentPage((page) =>
+                      Math.max(1, page - 1)
+                    )
+                  }
+                >
+                  Previous
+                </button>
+
+                <span>
+                  Page {safeCurrentPage} of {totalPages}
+                </span>
+
+                <button
+                  type="button"
+                  disabled={safeCurrentPage >= totalPages}
+                  onClick={() =>
+                    setCurrentPage((page) =>
+                      Math.min(totalPages, page + 1)
+                    )
+                  }
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          </>
         )}
 
         <p className="affirmation-footnote">
-          A schedule success event confirms that scheduling was recorded.
-          It does not independently confirm that the notification was delivered
-          or displayed on the device.
+          A schedule success event confirms that scheduling was
+          recorded. It does not independently confirm that the
+          notification was delivered or displayed on the device.
         </p>
       </div>
     </div>

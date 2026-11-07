@@ -2823,3 +2823,39 @@ button:disabled { opacity:.6; cursor:not-allowed; }
     grid-template-columns: 1fr;
   }
 }
+.affirmation-pagination {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 0;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.affirmation-pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.affirmation-pagination-controls button {
+  padding: 8px 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: white;
+  color: #1e293b;
+  cursor: pointer;
+}
+
+.affirmation-pagination-controls button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+@media (max-width: 640px) {
+  .affirmation-pagination {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
