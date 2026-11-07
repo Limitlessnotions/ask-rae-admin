@@ -54,6 +54,12 @@ const navigation = [
     label: "System Health",
     href: "/system-health",
   },
+{
+  label: "Affirmation Monitoring",
+  href: "/affirmation-monitoring",
+},
+
+
 ];
 
 function isActivePath(
